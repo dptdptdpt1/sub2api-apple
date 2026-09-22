@@ -1,0 +1,17 @@
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = req_ext
+prompt = no
+
+[req_distinguished_name]
+CN = seven.local
+
+[req_ext]
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = seven.local
+DNS.2 = api.seven.local
+IP.1 = 10.48.151.31
+IP.2 = 100.78.230.225
+IP.3 = 169.254.130.6

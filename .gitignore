@@ -1,0 +1,26 @@
+# ---- 密钥与凭据：绝不提交 ----
+.env
+.env.*
+!.env.example
+
+# ---- TLS 私钥与证书（本地自签，按机器生成） ----
+tls/*.key
+tls/*.crt
+tls/*.csr
+tls/*.pem
+tls/*.srl
+
+# ---- 数据库导出与运行期快照 ----
+*.dump
+*.rdb
+*.sql
+*.tsv
+*.tar.gz
+
+# ---- 运行期产物 ----
+*.log
+*.tmp
+*.init.tmp.*
+
+# ---- macOS ----
+.DS_Store
