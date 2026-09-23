@@ -45,6 +45,79 @@
 
 脚本内置了若干防护：启动前加文件锁避免并发操作、校验 `.env` 不可被 group/other 读取、对既有资源做 `org.sub2api.stack` 标签归属校验，避免误删非本栈的容器。
 
+## 使用自定义镜像（前端改动）
+
+前端是 Vue3 + Vite，用 `go:embed` 编译进 Go 二进制，**改 UI 必须重新出镜像**，
+无法只替换静态文件。UI 源码维护在 fork 里：
+[dptdptdpt1/sub2api](https://github.com/dptdptdpt1/sub2api) 分支 `ui-custom`。
+
+本仓库只需改 `.env` 里的一行镜像地址，脚本本身不用动。
+
+### 1. 构建（在开发机）
+
+```bash
+cd <fork 路径>
+docker buildx build --platform linux/arm64 \
+  --build-arg VERSION=0.2.7-ui1 \
+  --build-arg COMMIT=$(git rev-parse --short HEAD) \
+  -t local/sub2api:0.2.7-ui1 --load .
+```
+
+Go 与 pnpm 都在构建容器内，开发机不用安装。根目录 Dockerfile 已带
+`-tags embed`；直接跑 `make build-backend` **不带**这个 tag，编出来的二进制
+不含前端，页面会全部 404。
+
+### 2. 传输到部署机
+
+因为 GitHub token 通常没有 `write:packages` 权限，推不了 ghcr.io，改用离线传输：
+
+```bash
+docker save local/sub2api:0.2.7-ui1 -o /tmp/sub2api-ui1.tar
+scp /tmp/sub2api-ui1.tar seven.local:/tmp/
+ssh seven.local 'container image load -i /tmp/sub2api-ui1.tar && rm -f /tmp/sub2api-ui1.tar'
+```
+
+buildx 默认附带的 attestation manifest（使镜像成为 manifest list）Apple
+`container image load` 可正常识别，无需 `--provenance=false`。
+
+### 3. 切换并部署
+
+```bash
+cd ~/sub2api-apple
+cp -p .env ".env.before-ui-image-$(date +%Y%m%d-%H%M%S)"
+sed -i '' 's|^APPLE_CONTAINER_SUB2API_IMAGE=.*|APPLE_CONTAINER_SUB2API_IMAGE=local/sub2api:0.2.7-ui1|' .env
+./apple-container.sh up
+```
+
+**用 `up`，不要加 `--recreate`。** `cmd_up` 本身就无条件删除并重建应用容器；
+加 `--recreate` 会连 postgres 和 redis 一起拆掉重建，徒增风险。
+
+切换镜像后 wrapper 会比对 `/app/storage/runtime/base-image-id` 与新镜像 digest，
+自动把新二进制复制进卷，无需手工清理。
+
+### 数据安全
+
+`up` 全程不会删除任何卷：`ensure_volume` 遇到已存在的卷会直接返回，
+`delete_container_if_present` 只处理容器。唯一删卷的 `delete_volume_if_present`
+只在 `cmd_destroy` 中、且被 `--volumes` 判断包裹。所以换镜像不影响
+PostgreSQL、Redis 与应用数据。
+
+### 回滚
+
+上游镜像仍缓存在部署机上，回滚只需改回地址重新 `up`，无需重新下载：
+
+```bash
+cd ~/sub2api-apple
+sed -i '' 's|^APPLE_CONTAINER_SUB2API_IMAGE=.*|APPLE_CONTAINER_SUB2API_IMAGE=ghcr.io/wei-shaw/sub2api:0.2.7|' .env
+./apple-container.sh up
+```
+
+### 站点名称与 Logo
+
+`site_name`、`site_subtitle`、`site_logo` 是**数据库设置**，在管理后台 →
+系统设置里改，改完立即生效，不需要重新构建镜像。只有 `site_logo` 留空时
+才会回落到镜像内置的 `/logo.svg`。
+
 ## 不在本仓库中的文件
 
 以下文件只存在于部署机上，**不会**提交（见 `.gitignore`）：
